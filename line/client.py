@@ -11,7 +11,7 @@
 import re
 import requests
 import sys
-
+import json
 from api import LineAPI
 from models import LineGroup, LineContact, LineRoom, LineMessage
 from curve.ttypes import TalkException, ToType, OperationType, Provider
@@ -40,8 +40,6 @@ class LineClient(LineAPI):
         Enter PinCode '9779' to your mobile phone in 2 minutes
         >>> client = LineClient("carpedm20@gmail.com", "xxxxxxxxxx")
         Enter PinCode '7390' to your mobile phone in 2 minutes
-        >>> client = LineClient(authToken="xxx ... xxx")
-        True
         """
 
         if not (authToken or id and password):
@@ -65,7 +63,6 @@ class LineClient(LineAPI):
 
         if authToken:
             self.authToken = self._headers['X-Line-Access'] = authToken
-
             self.tokenLogin()
             #self.ready()
         else:
@@ -80,9 +77,13 @@ class LineClient(LineAPI):
 
             self.login()
             self.ready()
-
-        self.revision = self._getLastOpRevision()
-        self.getProfile()
+        try :   
+            self.revision = self._getLastOpRevision()
+            self.getProfile()
+        except EOFError:
+            return None
+        except TalkException as e:
+            return None
 
         try:
             self.refreshGroups()
@@ -95,7 +96,29 @@ class LineClient(LineAPI):
         try:
             self.refreshActiveRooms()
         except: pass
-
+    def checkAuth(self):
+        if self._check_auth():
+            try :
+                self.profile = LineContact(self, self._getProfile())
+                return self.profile
+            except EOFError:
+                obj = {}
+                obj['Exception'] = 'EOFError'
+                obj['message'] = 'Error Token'
+                obj['code'] = 9
+                return obj
+            except TalkException as e:
+                obj = {}
+                obj['Exception'] = 'TalkException'
+                obj['message'] = e.reason
+                obj['code'] = e.code
+                return obj
+        else:
+            obj = {}
+            obj['Exception'] = 'TalkException'
+            obj['message'] = 'You need Login'
+            obj['code'] = e.code
+            return obj
     def getProfile(self):
         """Get `profile` of LINE account"""
         if self._check_auth():
@@ -276,7 +299,7 @@ class LineClient(LineAPI):
                 else:
                     break
 
-    def createGroupWithIds(self, name, ids=[]):
+    def createGroupWithIds(self, ids=[]):
         """Create a group with contact ids
 
         :param name: name of group
@@ -448,16 +471,7 @@ class LineClient(LineAPI):
         :param message: LineMessage instance to send
         """
         if self._check_auth():
-            try:
-                return self._sendMessage(message, seq)
-            except TalkException as e:
-                self.updateAuthToken()
-                try:
-                    return self._sendMessage(message, seq)
-                except Exception as e:
-                    self.raise_error(e)
-
-                    return False
+            self._sendMessage(message, seq)
 
     def getMessageBox(self, id):
         """Get MessageBox by id
@@ -483,7 +497,7 @@ class LineClient(LineAPI):
         
             return self.getLineMessageFromMessage(messages)
 
-    def longPoll(self, count=50, debug=False):
+    def longPoll(self, count=50):
         """Receive a list of operations that have to be processed by original
         Line cleint.
 
@@ -506,13 +520,11 @@ class LineClient(LineAPI):
                 return
             except TalkException as e:
                 if e.code == 9:
-                    self.raise_error("user logged in to another machine")
+                    self.raise_error("user logged in to another machien")
                 else:
                     return
 
             for operation in operations:
-                if debug:
-                    print operation
                 if operation.type == OT.END_OF_OPERATION:
                     pass
                 elif operation.type == OT.SEND_MESSAGE:
@@ -533,13 +545,6 @@ class LineClient(LineAPI):
                                 sender = m
                                 break
 
-                    # If sender is not found, check member list of room chat sent to
-                    if sender is None and type(receiver) is LineRoom:
-                        for m in receiver.contacts:
-                            if m.id == raw_sender:
-                                sender = m
-                                break
-
                     if sender is None or receiver is None:
                         self.refreshGroups()
                         self.refreshContacts()
@@ -556,8 +561,6 @@ class LineClient(LineAPI):
                                 receiver = LineContact(self, contacts[1])
 
                     yield (sender, receiver, message)
-                elif operation.type in [ 60, 61 ]:
-                    pass
                 else:
                     print "[*] %s" % OT._VALUES_TO_NAMES[operation.type]
                     print operation

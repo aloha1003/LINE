@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-    line 
-    ~~~~
+    line
 
     May the LINE be with you...
 
@@ -13,7 +12,7 @@ from .api import LineAPI
 from .models import LineGroup, LineContact, LineRoom, LineBase, LineMessage
 
 __copyright__ = 'Copyright 2014 by Taehoon Kim'
-__version__ = '0.6.6'
+__version__ = '0.3.1'
 __license__ = 'BSD'
 __author__ = 'Taehoon Kim'
 __author_email__ = 'carpedm20@gmail.com'
@@ -25,5 +24,5 @@ __all__ = [
     # model wrappers for LINE API
     'LineGroup', 'LineContact', 'LineRoom', 'LineBase', 'LineMessage',
     # Line Thrift API
-    'LineAPI', 
+    'LineAPI',
 ]

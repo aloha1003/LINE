@@ -10,6 +10,5 @@ Development Lead
 Core Contributors
 `````````````````
 
-- Shinz Natkid `shinznatkid <https://github.com/shinznatkid>`_
 - Wittawat Tantisiriroj <wtantisiriroj@gmail.com>
 - HanShen Huang <hanshenh@gmail.com>

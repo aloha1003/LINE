@@ -6,13 +6,10 @@
     :copyright: (c) 2014 by Taehoon Kim.
     :license: BSD, see LICENSE for more details.
 """
-import json
-import shutil
 import requests
-import tempfile
-from time import time
 from datetime import datetime
 from curve.ttypes import Message, ContentType
+import json
 
 class LineMessage:
     """LineMessage wrapper"""
@@ -21,7 +18,7 @@ class LineMessage:
         self._client = client
         self.id   = message.id
         self.text = message.text
-
+        print message
         self.hasContent = message.hasContent
         self.contentType = message.contentType
         self.contentPreview = message.contentPreview
@@ -44,7 +41,16 @@ class LineMessage:
                     self.receiver,
                     self.text
                 )
+    def __dict__(self):
+        msg ={}
+        msg['contentType'] = ContentType._VALUES_TO_NAMES[self.contentType]
+        msg['sender'] = str(self.sender)
+        msg['receiver'] = str(self.receiver)
+        msg['msg'] = self.text
 
+        return json.dumps(msg)
+
+        
 class LineBase(object):
     _messageBox = None
 
@@ -54,7 +60,7 @@ class LineBase(object):
         :param text: text message to send
         """
         try:
-            message = Message(to=self.id, text=text.encode('utf-8'))
+            message = Message(to=self.id, text=text)
             self._client.sendMessage(message)
 
             return True
@@ -92,50 +98,54 @@ class LineBase(object):
 
     def sendImage(self, path):
         """Send a image
-
+        
         :param path: local path of image to send
         """
-        message = Message(to=self.id, text=None)
-        message.contentType = ContentType.IMAGE
-        message.contentPreview = None
-        message.contentMetadata = None
+        try:
+            img = open(path, 'r')
 
-        message_id = self._client.sendMessage(message).id
-        files = {
-            'file': open(path, 'rb'),
-        }
-        params = {
-            'name': 'media',
-            'oid': message_id,
-            'size': len(open(path, 'rb').read()),
-            'type': 'image',
-            'ver': '1.0',
-        }
-        data = {
-            'params': json.dumps(params)
-        }
-        r = self._client.post_content('https://os.line.naver.jp/talk/m/upload.nhn', data=data, files=files)
-        if r.status_code != 201:
-            raise Exception('Upload image failure.')
-        #r.content
-        return True
+            message = Message(to=self.id, text=None)
+            message.contentType = ContentType.IMAGE
+            message.contentPreview = img.read().encode('utf-8')
+
+            self.raise_error("not implemented yet")
+
+            url = None
+
+            message.contentMetadata = {
+                'PREVIEW_URL': url,
+                'DOWNLOAD_URL': url,
+                'PUBLIC': True,
+            }
+
+            self._client.sendMessage(message)
+
+            return True
+        except Exception as e:
+            raise e
 
     def sendImageWithURL(self, url):
         """Send a image with given image url
 
         :param url: image url to send
         """
-        path = '%s/pythonLine.data' % tempfile.gettempdir()
-
-        r = requests.get(url, stream=True)
-        if r.status_code == 200:
-            with open(path, 'w') as f:
-                shutil.copyfileobj(r.raw, f)
-        else:
-            raise Exception('Download image failure.')
-
         try:
-            self.sendImage(path)
+            response = requests.get(url, stream=True)
+
+            message = Message(to=self.id, text=None)
+            message.contentType = ContentType.IMAGE
+            message.contentPreview = response.raw.read()
+            #message.contentPreview = url.encode('utf-8')
+
+            message.contentMetadata = {
+                'PREVIEW_URL': url,
+                'DOWNLOAD_URL': url,
+                'PUBLIC': "True",
+            }
+
+            self._client.sendMessage(message, seq=1)
+
+            return True
         except Exception as e:
             raise e
 
@@ -240,7 +250,19 @@ class LineGroup(LineBase):
             return '<LineGroup %s #%s>' % (self.name, len(self.members))
         else:
             return '<LineGroup %s #%s (invited)>' % (self.name, len(self.members))
-
+    def __str__(self):
+        group ={}
+        group['name'] = self.name
+        group['id'] = self.id
+        group['is_joined'] = self.is_joined
+        temp_members = []
+        for member in self.members:
+            member.mid = member.id
+            member.displayName = member.name
+            temp_members.append(json.loads(str(LineContact(self._client, member))))
+        group['members'] = temp_members
+        group['total_member'] = len(self.members)
+        return  json.dumps(group)
 class LineRoom(LineBase):
     """Chat room wrapper
 
@@ -332,5 +354,16 @@ class LineContact(LineBase):
         return groups
 
     def __repr__(self):
-        #return '<LineContact %s (%s)>' % (self.name, self.id)
-        return '<LineContact %s>' % (self.name)
+        return '<LineContact %s id %s statusMessage %s>' % (self.name, self.id, self.statusMessage)
+        obj = {}
+        obj['name'] = self.name
+        obj['id'] = self.id
+        obj['statusMessage'] = self.statusMessage
+        return  json.dumps(obj)
+    def __str__(self):
+        obj = {}
+        obj['name'] = self.name
+        obj['id'] = self.id
+        obj['statusMessage'] = self.statusMessage
+        return  json.dumps(obj)
+        

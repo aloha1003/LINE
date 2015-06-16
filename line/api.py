@@ -22,6 +22,7 @@ from thrift.protocol import TCompactProtocol
 
 import sys
 reload(sys)
+
 sys.setdefaultencoding("utf-8")
 
 #from curve import CurveThrift
@@ -42,10 +43,9 @@ class LineAPI(object):
     LINE_SESSION_NAVER_URL = LINE_DOMAIN + "/authct/v1/keys/naver"
 
     ip          = "127.0.0.1"
-    version     = "5.1.2"
+    version     = "3.7.0"
     com_name    = ""
     revision    = 0
-    certificate = ""
 
     _session = requests.session()
     _headers = {}
@@ -55,20 +55,24 @@ class LineAPI(object):
         After login, make `client` and `client_in` instance
         to communicate with LINE server
         """
-        raise Exception("Code is removed because of the request of LINE corporation")
+        
+        self.transport    = THttpClient.THttpClient(self.LINE_HTTP_URL)
+        self.transport_in = THttpClient.THttpClient(self.LINE_HTTP_IN_URL)
 
-    def updateAuthToken(self):
-        """
-        After login, update authToken to avoid expiration of
-        authToken. This method skip the PinCode validation step.
-        """
-        if self.certificate:
-            self.login()
-            self.tokenLogin()
+        self.transport.setCustomHeaders(self._headers)
+        self.transport_in.setCustomHeaders(self._headers)
 
-            return True
-        else:
-            self.raise_error("You need to login first. There is no valid certificate")
+        self.protocol    = TCompactProtocol.TCompactProtocol(self.transport)
+        self.protocol_in = TCompactProtocol.TCompactProtocol(self.transport_in)
+
+        self._client    = CurveThrift.Client(self.protocol)
+        self._client_in = CurveThrift.Client(self.protocol_in)
+
+        self.transport.open()
+        self.transport_in.open()
+
+        #raise Exception("Code is removed because of the request of LINE corporation")
+
 
     def tokenLogin(self):
         self.transport = THttpClient.THttpClient(self.LINE_HTTP_URL)
@@ -76,13 +80,14 @@ class LineAPI(object):
 
         self.protocol = TCompactProtocol.TCompactProtocol(self.transport)
         self._client  = CurveThrift.Client(self.protocol)
-        
+    
     def login(self):
         """Login to LINE server."""
+        
         if self.provider == CurveThrift.Provider.LINE: # LINE
-            j = self._get_json(self.LINE_SESSION_LINE_URL)
+            j = self.get_json(self.LINE_SESSION_LINE_URL)
         else: # NAVER
-            j = self._get_json(self.LINE_SESSION_NAVER_URL)
+            j = self.get_json(self.LINE_SESSION_NAVER_URL)
 
         session_key = j['session_key']
         message     = (chr(len(session_key)) + session_key +
@@ -100,22 +105,31 @@ class LineAPI(object):
         self._client   = CurveThrift.Client(self.protocol)
 
         msg = self._client.loginWithIdentityCredentialForCertificate(
-                self.id, self.password, keyname, crypto, True, self.ip,
-                self.com_name, self.provider, self.certificate)
-
+                self.id, self.password, keyname, crypto, False, self.ip,
+                self.com_name, self.provider, "")
+        
         self._headers['X-Line-Access'] = msg.verifier
         self._pinCode = msg.pinCode
+        message = "Enter PinCode '%s' to your mobile phone in 2 minutes"\
+                % self._pinCode
+        
+        print message
+        
 
-        if msg.type == 3:
-            print "Enter PinCode '%s' to your mobile phone in 2 minutes"\
-                    % self._pinCode
+        j = self.get_json(self.LINE_CERTIFICATE_URL)
+        self.verifier = j['result']['verifier']
 
-            raise Exception("Code is removed because of the request of LINE corporation")
+        msg = self._client.loginWithVerifierForCertificate(self.verifier)
+
+        if msg.type == 1:
+            self.certificate = msg.certificate
+            self.authToken = self._headers['X-Line-Access'] = msg.authToken
+        elif msg.type == 2:
+            msg = "require QR code"
+            self.raise_error(msg)
         else:
-            self.authToken =self._headers['X-Line-Access'] = msg.authToken
-
-            return True
-
+            msg = "require device confirm"
+            self.raise_error(msg)
     def get_json(self, url):
         """Get josn from given url with saved session and headers"""
         return json.loads(self._session.get(url, headers=self._headers).text)
@@ -161,7 +175,7 @@ class LineAPI(object):
                     - mid
                     - displayNameOverridden
                     - relation
-                    - thumbnailUrl
+                    - thumbnailUrl_
                     - createdTime
                     - facoriteTime
                     - capableMyhome
@@ -285,7 +299,7 @@ class LineAPI(object):
         except Exception as e:
             msg = e
             self.raise_error(msg)
-
+    
     def raise_error(self, msg):
         """Error format"""
         raise Exception("Error: %s" % msg)
@@ -293,6 +307,3 @@ class LineAPI(object):
     def _get_json(self, url):
         """Get josn from given url with saved session and headers"""
         return json.loads(self._session.get(url, headers=self._headers).text)
-
-    def post_content(self, url, data=None, files=None):
-        return self._session.post(url, headers=self._headers, data=data, files=files)
